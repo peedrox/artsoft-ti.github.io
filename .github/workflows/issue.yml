@@ -1,0 +1,76 @@
+name: Check Issue Labels Associated with PRs
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Número do Pull Request que deseja verificar'
+        required: true
+  pull_request:
+    branches:
+      - develop
+
+jobs:
+  check-associated-issue:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Verificar PR
+        id: pr_info
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}  # Passa o token aqui
+          script: |
+            // Determinar o número da PR com base no evento
+            const prNumber = (context.eventName === 'pull_request')
+              ? context.payload.pull_request.number  // Evento "pull_request"
+              : parseInt("${{ github.event.inputs.pr_number }}"); // Evento "workflow_dispatch"
+
+            // Validar o número da PR
+            if (isNaN(prNumber)) {
+              core.setFailed("Número de PR inválido ou não especificado.");
+              return;
+            }
+            
+            // Obter PR específico
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+            
+            // Procurar por todas as referências de issues no corpo do PR
+            const issueNumbers = [...pr.data.body.matchAll(/#(\d+)/g)].map(match => match[1]);
+            if (issueNumbers.length === 0) {
+              core.setFailed("Nenhuma issue associada ao PR.");
+              return;
+            }
+
+            console.log(`Issues associadas encontradas: #${issueNumbers.join(", #")}`);
+
+            // Verificar labels para cada issue associada
+            for (const issueNumber of issueNumbers) {
+              const issue = await github.rest.issues.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber
+              });
+              
+              const hasEpicLabel = issue.data.labels.some(label => label.name === "type: epic");
+              const hasTaskLabel = issue.data.labels.some(label => label.name === "type: task");
+              const hasImprovementLabel = issue.data.labels.some(label => label.name === "type: improvement");
+
+              // Avaliar as condições das labels para cada issue
+              if (hasEpicLabel) {
+                core.setFailed(`A issue associada #${issueNumber} possui a label "epic".`);
+                break;
+              } else if (hasTaskLabel) {
+                core.setFailed(`A issue associada #${issueNumber} possui a label "task".`);
+                break;
+              } else if (hasImprovementLabel) {
+                core.setFailed(`A issue associada #${issueNumber} possui a label "improvement".`);
+                break;
+              } else {
+                console.log(`A issue associada #${issueNumber} não possui nenhuma label de desenvolvimento.`);
+              }
+            }
