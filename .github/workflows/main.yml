@@ -1,0 +1,27 @@
+name: Enable AutoMerge on PR Creation
+
+on:
+  pull_request:
+    types: [opened]
+
+jobs:
+  enable-auto-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable AutoMerge using GitHub Script
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const prNodeId = context.payload.pull_request.node_id;
+
+            // Tentar efetuar o AutoMerge no PR com método SQUASH
+            await github.graphql(
+              `mutation($prId: ID!) {
+                enablePullRequestAutoMerge(input: { pullRequestId: $prId, mergeMethod: SQUASH }) {clientMutationId}
+              }`,
+              {
+                prId: prNodeId,
+              }
+            );
